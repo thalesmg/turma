@@ -25,13 +25,15 @@ defmodule Turma.MixProject do
       legionarius: [
         applications: [
           legionarius: :permanent
-        ]
+        ],
+        steps: [:assemble, :tar]
       ],
       decurio: [
         applications: [
           legionarius: :load,
           decurio: :permanent
-        ]
+        ],
+        steps: [:assemble, :tar]
       ]
     ]
   end
