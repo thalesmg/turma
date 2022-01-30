@@ -4,6 +4,14 @@ export MIX_ENV=prod
 
 arch="$1"
 
+apt update
+apt install -yyq git
+
+mix local.hex --force
+mix local.rebar --force
+
+mix deps.get
+
 mix release decurio --overwrite
 mix release legionarius --overwrite
 
