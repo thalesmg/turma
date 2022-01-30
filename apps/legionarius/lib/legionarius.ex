@@ -31,11 +31,14 @@ defmodule Legionarius do
     case fun.() do
       result = %Result{} ->
         put_result(id, result)
-        exit({:done, result})
+        exit({:done, id, result})
 
       other_res ->
-        exit({:bad_result, other_res})
+        exit({:bad_result, id, other_res})
     end
+  rescue
+    err ->
+      exit({:exception, id, {err, __STACKTRACE__}})
   end
 
   def handle_call({:register, id, pid}, _from, state) do
@@ -62,15 +65,14 @@ defmodule Legionarius do
   end
 
   def handle_info({:DOWN, ref, :process, _pid, result}, state) do
-    result = normalize(result)
-
     state =
-      case pop_in(state, [:mons, ref]) do
-        {nil, state} ->
+      with {id, result} <- normalize(result) do
+        state
+        |> Map.update!(:mons, &Map.delete(&1, ref))
+        |> put_in([:jobs, id], result)
+      else
+        _ ->
           state
-
-        {id, state} ->
-          put_in(state, [:jobs, id], result)
       end
 
     {:noreply, state}
@@ -82,11 +84,14 @@ defmodule Legionarius do
 
   defp normalize(result) do
     case result do
-      {:done, %Result{}} ->
-        result
+      {:done, id, result = %Result{}} ->
+        {id, {:done, result}}
 
-      {:bad_result, _error} ->
-        result
+      {:bad_result, id, error} ->
+        {id, {:bad_result, error}}
+
+      {:exception, id, error} ->
+        {id, {:exception, error}}
 
       other ->
         {:bad_result, other}

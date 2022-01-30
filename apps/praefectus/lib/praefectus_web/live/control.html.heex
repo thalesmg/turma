@@ -1,0 +1,25 @@
+<h1> Hi </h1>
+
+<div>
+  <form phx-submit="connect">
+    <input type="text" name="decurio_server" value={@decurio_server} />
+  </form>
+
+  <form phx-change="change_nodes">
+    <textarea name="nodes"></textarea>
+  </form>
+  <button phx-click="add_nodes">Add Nodes</button>
+
+  <form phx-change="change_fun">
+    <textarea name="fun"></textarea>
+  </form>
+  <button phx-click="run">Run</button>
+
+  <ul>
+    <%= for {id, request} <- @requests do %>
+        <li phx-click="update_request" phx-value-id={id}>
+          <%= id %> :: <%= inspect(request, pretty: true) %>
+        </li>
+    <% end %>
+  </ul>
+</div>

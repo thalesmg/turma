@@ -66,7 +66,7 @@ defmodule DecurioTest do
                [legs]
              )
 
-    {:ok, %{id: id}} =
+    %{id: id} =
       :erpc.call(
         dec,
         Decurio,
@@ -98,7 +98,7 @@ defmodule DecurioTest do
                [legs]
              )
 
-    {:ok, %{id: id}} =
+    %{id: id} =
       :erpc.call(
         dec,
         Decurio,
@@ -130,7 +130,7 @@ defmodule DecurioTest do
                [legs]
              )
 
-    {:ok, %{id: id}} =
+    %{id: id} =
       :erpc.call(
         dec,
         Decurio,
@@ -147,12 +147,12 @@ defmodule DecurioTest do
               responses: [
                 {^l1,
                  {
-                   :bad_result,
+                   :exception,
                    {%RuntimeError{message: "some error"}, _stacktrace1}
                  }},
                 {^l2,
                  {
-                   :bad_result,
+                   :exception,
                    {%RuntimeError{message: "some error"}, _stacktrace2}
                  }}
               ]

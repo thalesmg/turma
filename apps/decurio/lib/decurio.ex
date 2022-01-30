@@ -15,6 +15,7 @@ defmodule Decurio do
     GenServer.call(__MODULE__, {:add_nodes, nodes})
   end
 
+  @spec run((() -> Result.t())) :: %{id: binary, running_nodes: [node]}
   def run(fun) when is_function(fun, 0) do
     GenServer.call(__MODULE__, {:run, fun})
   end
@@ -34,6 +35,10 @@ defmodule Decurio do
     known_nodes = MapSet.union(state.known_nodes, connected_nodes)
 
     {:reply, {:ok, connected_nodes}, %{state | known_nodes: known_nodes}}
+  end
+
+  def handle_call(:list, _from, state) do
+    {:reply, Map.keys(state.requests), state}
   end
 
   def handle_call({:run, fun}, _from, state) do
@@ -57,7 +62,7 @@ defmodule Decurio do
 
     {
       :reply,
-      {:ok, %{id: id, running_nodes: running_nodes}},
+      %{id: id, running_nodes: running_nodes},
       %{state | requests: requests}
     }
   end
@@ -84,6 +89,11 @@ defmodule Decurio do
 
   def handle_info(msg, state) do
     Logger.debug("#{__MODULE__} got " <> inspect(msg, pretty: true))
+
+    with {:DOWN, _ref, :process, pid, {:done, id, result}} <- msg do
+      :gen_event.notify(Decurio.Notifier, {:done, node(pid), id, result})
+    end
+
     {:noreply, state}
   end
 

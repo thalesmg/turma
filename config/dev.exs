@@ -47,9 +47,9 @@ config :praefectus, PraefectusWeb.Endpoint,
 config :praefectus, PraefectusWeb.Endpoint,
   live_reload: [
     patterns: [
-      ~r"priv/static/.*(js|css|png|jpeg|jpg|gif|svg)$",
-      ~r"lib/praefectus_web/(live|views)/.*(ex)$",
-      ~r"lib/praefectus_web/templates/.*(eex)$"
+      ~r"apps/praefectus/priv/static/.*(js|css|png|jpeg|jpg|gif|svg)$",
+      ~r"apps/praefectus/lib/praefectus_web/(live|views)/.*(ex)$",
+      ~r"apps/praefectus/lib/praefectus_web/templates/.*(eex)$"
     ]
   ]
 

@@ -18,6 +18,8 @@ defmodule PraefectusWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :index
+
+    live("/control", Live.Control)
   end
 
   # Other scopes may use custom stacks.

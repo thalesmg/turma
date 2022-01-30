@@ -13,6 +13,10 @@ defmodule Decurio.Application do
       %{
         id: Decurio,
         start: {Decurio, :start_link, []}
+      },
+      %{
+        id: Decurio.Notifier,
+        start: {:gen_event, :start_link, [local: Decurio.Notifier]}
       }
     ]
 

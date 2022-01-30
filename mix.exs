@@ -21,11 +21,15 @@ defmodule Turma.MixProject do
   end
 
   def releases() do
+    {hash, 0} = System.cmd("git", ["rev-parse", "HEAD"])
+    cookie = String.trim(hash)
+
     [
       legionarius: [
         applications: [
           legionarius: :permanent
         ],
+        cookie: cookie,
         steps: [:assemble, :tar]
       ],
       decurio: [
@@ -33,6 +37,7 @@ defmodule Turma.MixProject do
           legionarius: :load,
           decurio: :permanent
         ],
+        cookie: cookie,
         steps: [:assemble, :tar]
       ]
     ]
