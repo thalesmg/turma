@@ -1,9 +1,16 @@
+RELEASE_COOKIE ?= biscoctus
+MIX_ENV ?= prod
+
+export RELEASE_COOKIE MIX_ENV
+
 all: decurio legionarius
 
 .PHONY: decurio
 decurio:
-	MIX_ENV=prod mix release decurio --overwrite
+	cd decurio && \
+	  mix release --overwrite
 
 .PHONY: legionarius
 legionarius:
-	MIX_ENV=prod mix release legionarius --overwrite
+	cd legionarius && \
+	  mix release --overwrite

@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 
+set -xeu
+
 export MIX_ENV=prod
+export RELEASE_COOKIE=biscoctus
 
 arch="$1"
 
 apt update
-apt install -yyq git
+apt install -yyq git make
 
 mix local.hex --force
 mix local.rebar --force
 
-mix deps.get
+make all
 
-mix release decurio --overwrite
-mix release legionarius --overwrite
-
-for f in $(ls _build/prod/*.tar.gz)
+for f in $(ls {decurio,legionarius}/_build/prod/*.tar.gz)
 do
   out=${f%%.tar.gz}-${arch}
-  mv "$f" ${out}.tar.gz
+  out=${out##*/}
+  mv "$f" ./${out}.tar.gz
 done

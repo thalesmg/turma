@@ -36,15 +36,16 @@ jobs:
             -v "$PWD":/build \
             -w /build \
             --platform="linux/${{ matrix.arch }}" \
-            hexpm/elixir:1.13.2-erlang-24.2.1-ubuntu-impish-20211102 \
+            ghcr.io/emqx/emqx-builder/5.0-8:1.13.3-24.2.1-1-ubuntu20.04 \
             bash -euc "./.github/workflows/release.sh ${{ matrix.arch }}"
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v2.3.1
         with:
           name: releases
           retention-days: 1
+          if-no-files-found: error
           path: |
-            _build/prod/*.tar.gz
+            *.tar.gz
 
   release:
     runs-on: ubuntu-latest
