@@ -1,0 +1,3 @@
+%{
+  "chumak": {:hex, :chumak, "1.4.0", "79eb44ba2da1e2a072c06bca1c79016c936423c6b8f826d6a7c2e22e046a3d40", [:rebar3], [], "hexpm", "a3a618a2cae0e3f8e844752e7f6f56c6231c5daef1a8de498a5973baa202cc5c"},
+}

@@ -1,0 +1,24 @@
+---
+
+on: [pull_request, push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.4.2
+      - uses: erlef/setup-beam@v1.11.2
+        with:
+          otp-version: "24.3"
+          elixir-version: "1.13.4"
+      - name: setup
+        run: |
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get
+      - name: test
+        run: mix test
+
+...
