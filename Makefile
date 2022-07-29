@@ -1,9 +1,14 @@
+.PHONY: all decurio legionarius quickrun
+
+MIX_ENV ?= dev
+
 all: decurio legionarius
 
-.PHONY: decurio
 decurio:
-	MIX_ENV=prod mix release decurio --overwrite
+	mix release --overwrite decurio
 
-.PHONY: legionarius
 legionarius:
-	MIX_ENV=prod mix release legionarius --overwrite
+	mix release --overwrite legionarius
+
+quickrun: decurio
+	_build/$(MIX_ENV)/rel/decurio/bin/decurio start_iex

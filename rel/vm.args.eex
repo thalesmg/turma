@@ -11,5 +11,5 @@
 ##-env ERL_FULLSWEEP_AFTER 10
 
 <%= if @release.name == :decurio do %>
--hidden
-<% end %>
+-turma decurio true
+<% end%>
