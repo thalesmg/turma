@@ -69,7 +69,14 @@ defmodule TurmaTest do
           {"localhost", Map.fetch!(binds, n)}
         ])
 
-      :ok = :erpc.call(n, Application, :put_env, [Legionarius, :subscriptions, []])
+      subs =
+        if n == dec_node do
+          ["decurio"]
+        else
+          ["legionarius"]
+        end
+
+      :ok = :erpc.call(n, Application, :put_env, [Legionarius, :subscriptions, subs])
     end)
 
     Enum.each(nodes, fn n ->
@@ -191,6 +198,30 @@ defmodule TurmaTest do
     expected =
       Map.new(nodes, fn n ->
         {n, {:throw, :boom}}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
+  end
+
+  test "subscriptions", %{legs: legs, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               ["legionarius", &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected =
+      Map.new(legs, fn n ->
+        {n, {:ok, n}}
       end)
 
     assert :erpc.call(
