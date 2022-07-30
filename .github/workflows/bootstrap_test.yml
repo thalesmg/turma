@@ -1,0 +1,63 @@
+---
+
+name: bootstrap test
+
+on:
+  workflow_call: {}
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.4.2
+      - name: Cache
+        uses: actions/cache@v3.0.5
+        with:
+          path: |
+            $HOME/.cache/dhall/
+          key: ${{ runner.os }}-${{ hashFiles('./.github/workflows/turma-bootstrap-test.dhall') }}
+      - uses: erlef/setup-beam@v1.11.2
+        with:
+          otp-version: "24.3"
+          elixir-version: "1.13.4"
+      - name: setup
+        run: |
+          mix local.hex --if-missing --force
+          mix local.rebar --if-missing --force
+          mix deps.get
+      - name: release
+        run: make all
+        env:
+          MIX_ENV: prod
+      - name: Setup Dhall
+        uses: dhall-lang/setup-dhall@v4
+        with:
+          version: "1.41.1"
+      - name: Kubectl tool installer
+        uses: Azure/setup-kubectl@v3
+      - uses: okteto/context@2.5.2
+        with:
+          token: ${{ secrets.OKTETO_TOKEN }}
+      - name: Create Namespace
+        uses: okteto/create-namespace@2.5.2
+        with:
+          namespace: ${{ github.ref_name }}-turma-thalesmg
+      - name: setup test environment
+        env:
+          NAMESPACE: ${{ github.ref_name }}-turma-thalesmg
+          KUBECONFIG: ${{ steps.kubeconfig.outputs.kubeconfig }}
+          OKTETO_TOKEN: ${{ secrets.OKTETO_TOKEN }}
+        run: ./.github/workflows/bootstrap_test.sh
+      - name: finally test bootstrapping
+        run: ./.github/workflows/bootstrap_test.exs
+        env:
+          NAMESPACE: ${{ github.ref_name }}-turma-thalesmg
+      - name: Delete Namespace
+        if: ${{ always() }}
+        uses: okteto/delete-namespace@2.5.2
+        with:
+          namespace: ${{ github.ref_name }}-turma-thalesmg
+
+...
