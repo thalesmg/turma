@@ -43,6 +43,7 @@ defmodule Turma.Decurio do
        my_name: my_name,
        inventory: inventory,
        pub_sock: pub_sock,
+       dealer_sock: dealer_sock,
        receiver_pid: receiver_pid,
        responses: %{}
      }}
