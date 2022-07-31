@@ -22,7 +22,7 @@ defmodule TurmaTest do
     :slave.start_link(host, name, args)
   end
 
-  setup %{host: host} do
+  setup env = %{host: host} do
     {:ok, leg_node1} = start_slave(:legionarius, :leg1, host)
     {:ok, leg_node2} = start_slave(:legionarius, :leg2, host)
     {:ok, dec_node} = start_slave(:decurio, :dec, host)
@@ -58,7 +58,11 @@ defmodule TurmaTest do
         )
     end)
 
-    :ok = :erpc.call(dec_node, Application, :put_env, [Decurio, :inventory, inventory])
+    set_inventory? = Map.get(env, :set_inventory?, true)
+    if set_inventory? do
+      :ok = :erpc.call(dec_node, Application, :put_env, [Decurio, :inventory, inventory])
+    end
+
     :ok = :erpc.call(dec_node, Application, :put_env, [Decurio, :name, "decurio-test"])
 
     Enum.each(nodes, fn n ->
@@ -209,6 +213,44 @@ defmodule TurmaTest do
   end
 
   test "subscriptions", %{legs: legs, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               ["legionarius", &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected =
+      Map.new(legs, fn n ->
+        {n, {:ok, n}}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
+  end
+
+  test "set_inventory", %{legs: legs, binds: binds, dec: dec} do
+    inv =
+      Map.new(legs, fn leg ->
+        {"localhost:#{Map.fetch!(binds, leg)}", ["legionarius"]}
+      end)
+
+    assert :erpc.call(
+               dec,
+               Decurio,
+               :set_inventory,
+               [inv]
+             ) == :ok
+
+    Process.sleep(1_000)
+
     assert {:ok, req_id} =
              :erpc.call(
                dec,

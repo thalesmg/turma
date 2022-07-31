@@ -1,5 +1,7 @@
 ---
 
+name: test
+
 on: [pull_request, push]
 
 jobs:
@@ -21,4 +23,7 @@ jobs:
       - name: test
         run: mix test
 
+  bootstrap_test:
+    uses: ./.github/workflows/bootstrap_test.yml
+    secrets: inherit
 ...

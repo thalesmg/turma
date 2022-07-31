@@ -5,5 +5,5 @@ config Turma.Decurio,
   name: "decurio"
 
 config Turma.Legionarius,
-  bind: {"localhost", 19876},
+  bind: {"0.0.0.0", 19876},
   subscriptions: []

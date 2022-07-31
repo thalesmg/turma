@@ -29,12 +29,59 @@ defmodule Turma.Decurio do
     GenServer.call(__MODULE__, {:set_inventory, inventory})
   end
 
+  def bootstrap(%{
+        desired_inventory: desired_inventory = %{},
+        command: "" <> cmd
+      }) do
+    unless Process.whereis(__MODULE__) do
+      raise "no decurio running!"
+    end
+
+    {:ok, sup} = Task.Supervisor.start_link()
+
+    {ok, failed} =
+      Task.Supervisor.async_stream_nolink(
+        sup,
+        desired_inventory,
+        fn {endpoint, tags} ->
+          [host, _] = String.split(endpoint, ":", parts: 2)
+
+          if host != "localhost" do
+            {_, 0} =
+              System.cmd(
+                "ssh",
+                [host, "-o", "StrictHostKeyChecking=no", "bash", "-c", "'#{cmd}'"],
+                stderr_to_stdout: true
+              )
+          end
+
+          {endpoint, tags}
+        end,
+        max_concurrency: 10,
+        timeout: 60_000,
+        on_timeout: :kill_task
+      )
+      |> Enum.split_with(&match?({:ok, _}, &1))
+
+    inventory = Map.new(ok, fn {:ok, {endpoint, tags}} -> {endpoint, tags} end)
+
+    :ok = set_inventory(inventory)
+
+    %{inventory: inventory, failed: failed}
+  end
+
   @impl GenServer
   def init(opts) do
     inventory = Map.get(opts, :inventory, %{})
     my_name = Map.get(opts, :name, "decurio")
     {:ok, pub_sock} = :chumak.socket(:pub)
-    {:ok, dealer_sock} = :chumak.socket(:dealer, to_charlist(my_name))
+
+    dealer_sock =
+      case :chumak.socket(:dealer, to_charlist(my_name)) do
+        {:ok, dealer_sock} -> dealer_sock
+        {:error, {:already_started, dealer_sock}} -> dealer_sock
+      end
+
     connect_all(inventory, pub_sock, dealer_sock)
     receiver_pid = spawn_link(__MODULE__, :receiver_loop, [self(), dealer_sock])
 
@@ -43,6 +90,7 @@ defmodule Turma.Decurio do
        my_name: my_name,
        inventory: inventory,
        pub_sock: pub_sock,
+       dealer_sock: dealer_sock,
        receiver_pid: receiver_pid,
        responses: %{}
      }}
