@@ -15,6 +15,11 @@ defmodule Turma.Legionarius do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  def set_subscriptions(subs) do
+    subs = MapSet.new(subs)
+    GenServer.cast(__MODULE__, {:set_subscriptions, subs})
+  end
+
   @impl GenServer
   def init(opts) do
     {:ok, sub_sock} = :chumak.socket(:sub)
@@ -23,9 +28,12 @@ defmodule Turma.Legionarius do
     {:ok, _bind_pid0} = :chumak.bind(sub_sock, :tcp, to_charlist(iface), base_port_num)
     {:ok, _bind_pid1} = :chumak.bind(router_sock, :tcp, to_charlist(iface), base_port_num + 1)
     subscriptions = Map.get(opts, :subscriptions, [])
+    subscriptions = MapSet.new(subscriptions)
 
     Enum.each(
-      ["all" | subscriptions],
+      subscriptions
+      |> MapSet.put("all")
+      |> MapSet.put(hostname()),
       &:chumak.subscribe(sub_sock, [@prefix, &1])
     )
 
@@ -36,6 +44,7 @@ defmodule Turma.Legionarius do
      %{
        sub_sock: sub_sock,
        router_sock: router_sock,
+       subscriptions: subscriptions,
        receiver_pid: receiver_pid
      }}
   end
@@ -46,6 +55,18 @@ defmodule Turma.Legionarius do
   end
 
   @impl GenServer
+  def handle_cast({:set_subscriptions, subscriptions}, state) do
+    to_unsubscribe = MapSet.difference(state.subscriptions, subscriptions)
+    Enum.each(to_unsubscribe, &:chumak.unsubscribe(state.sub_sock, [@prefix, &1]))
+    Enum.each(
+      subscriptions
+      |> MapSet.put("all")
+      |> MapSet.put(hostname()),
+      &:chumak.subscribe(state.sub_sock, [@prefix, &1])
+    )
+    state = %{state | subscriptions: subscriptions}
+    {:noreply, state}
+  end
   def handle_cast(_cast, state) do
     {:noreply, state}
   end
@@ -114,5 +135,10 @@ defmodule Turma.Legionarius do
 
       send(parent, {:done, id, identity, res})
     end)
+  end
+
+  defp hostname() do
+    {:ok, hostname} = :inet.gethostname()
+    to_string(hostname)
   end
 end

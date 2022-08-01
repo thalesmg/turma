@@ -45,7 +45,7 @@ defmodule TurmaTest do
     inventory =
       Map.new(nodes, fn n ->
         host = "localhost:#{Map.fetch!(binds, n)}"
-        {host, []}
+        {host, %{tags: []}}
       end)
 
     Enum.each(nodes, fn n ->
@@ -239,7 +239,7 @@ defmodule TurmaTest do
   test "set_inventory", %{legs: legs, binds: binds, dec: dec} do
     inv =
       Map.new(legs, fn leg ->
-        {"localhost:#{Map.fetch!(binds, leg)}", ["legionarius"]}
+        {"localhost:#{Map.fetch!(binds, leg)}", %{tags: ["legionarius"]}}
       end)
 
     assert :erpc.call(
@@ -256,7 +256,7 @@ defmodule TurmaTest do
                dec,
                Decurio,
                :run,
-               ["legionarius", &Utils.success/0]
+               ["some_tag", &Utils.success/0]
              )
 
     Process.sleep(1_000)

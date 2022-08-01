@@ -43,7 +43,7 @@ defmodule Turma.Decurio do
       Task.Supervisor.async_stream_nolink(
         sup,
         desired_inventory,
-        fn {endpoint, tags} ->
+        fn {endpoint, opts} ->
           [host, _] = String.split(endpoint, ":", parts: 2)
 
           if host != "localhost" do
@@ -55,7 +55,7 @@ defmodule Turma.Decurio do
               )
           end
 
-          {endpoint, tags}
+          {endpoint, opts}
         end,
         max_concurrency: 10,
         timeout: 60_000,
@@ -63,7 +63,7 @@ defmodule Turma.Decurio do
       )
       |> Enum.split_with(&match?({:ok, _}, &1))
 
-    inventory = Map.new(ok, fn {:ok, {endpoint, tags}} -> {endpoint, tags} end)
+    inventory = Map.new(ok, fn {:ok, {endpoint, opts}} -> {endpoint, opts} end)
 
     :ok = set_inventory(inventory)
 
@@ -112,7 +112,9 @@ defmodule Turma.Decurio do
 
   def handle_call({:set_inventory, inventory}, _from, state) do
     state = %{state | inventory: inventory}
-    # FIXME: diff inventory and disconnect from old hosts?!?!
+    # FIXME: diff inventory and disconnect from old hosts?  chumak
+    # does not support disconnecting currently...
+    # FIXME: set tags?!  requires connection to be estabilished...
     connect_all(inventory, state.pub_sock, state.dealer_sock)
     {:reply, :ok, state}
   end
@@ -163,7 +165,7 @@ defmodule Turma.Decurio do
   end
 
   defp connect_all(inventory, pub_sock, dealer_sock) do
-    Enum.each(inventory, fn {host, _tags} ->
+    Enum.each(inventory, fn {host, _opts} ->
       {host, base_port} = parse_host(host)
       :chumak.connect(pub_sock, :tcp, to_charlist(host), base_port)
       :chumak.connect(dealer_sock, :tcp, to_charlist(host), base_port + 1)
