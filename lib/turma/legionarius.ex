@@ -57,7 +57,7 @@ defmodule Turma.Legionarius do
   @impl GenServer
   def handle_cast({:set_subscriptions, subscriptions}, state) do
     to_unsubscribe = MapSet.difference(state.subscriptions, subscriptions)
-    Enum.each(to_unsubscribe, &:chumak.unsubscribe(state.sub_sock, [@prefix, &1]))
+    Enum.each(to_unsubscribe, &:chumak.cancel(state.sub_sock, [@prefix, &1]))
     Enum.each(
       subscriptions
       |> MapSet.put("all")
