@@ -5,34 +5,46 @@ defmodule Turma.Decurio do
 
   @prefix "turma-command:"
 
-  @type tag :: binary()
-  @type peer :: binary()
-  @type inventory :: %{tag => [peer]}
+  @type tag() :: binary()
+  @type peer() :: binary()
+  @type job_id() :: reference()
+  @type inventory() :: %{tag() => [peer()]}
+  @type start_opts :: %{
+    inventory: inventory(),
+    name: binary()
+  }
+
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @spec run((() -> term())) :: {:ok, job_id()}
   def run(fun) when is_function(fun, 0) do
     run(:all, fun)
   end
 
+  @spec run(binary(), (() -> term())) :: {:ok, job_id()}
   def run("" <> tag, fun) when is_function(fun, 0) do
     run([tag], fun)
   end
 
+  @spec run(:all | [binary()], (() -> term())) :: {:ok, job_id()}
   def run(tags, fun) when (is_list(tags) or is_atom(tags)) and is_function(fun, 0) do
     GenServer.call(__MODULE__, {:run, tags, fun})
   end
 
+  @spec get(job_id()) :: :error | {:ok, map()}
   def get(id) do
     GenServer.call(__MODULE__, {:get, id})
   end
 
+  @spec get(job_id) :: map()
   def get_all() do
     GenServer.call(__MODULE__, :get_all)
   end
 
+  @spec set_inventory(inventory()) :: :ok
   def set_inventory(inventory = %{}) do
     GenServer.call(__MODULE__, {:set_inventory, inventory})
   end
