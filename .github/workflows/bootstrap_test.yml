@@ -40,24 +40,28 @@ jobs:
       - uses: okteto/context@2.5.2
         with:
           token: ${{ secrets.OKTETO_TOKEN }}
+      - name: set namespace
+        id: namespace
+        run: |
+          echo ::set-output name=name::"${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref) || github.ref_name }}-turma-thalesmg"
       - name: Create Namespace
         uses: okteto/create-namespace@2.5.2
         with:
-          namespace: ${{ github.ref_name }}-turma-thalesmg
+          namespace: ${{ steps.namespace.outputs.name }}
       - name: setup test environment
         env:
-          NAMESPACE: ${{ github.ref_name }}-turma-thalesmg
+          NAMESPACE: ${{ steps.namespace.outputs.name }}
           KUBECONFIG: ${{ steps.kubeconfig.outputs.kubeconfig }}
           OKTETO_TOKEN: ${{ secrets.OKTETO_TOKEN }}
         run: ./.github/workflows/bootstrap_test.sh
       - name: finally test bootstrapping
         run: ./.github/workflows/bootstrap_test.exs
         env:
-          NAMESPACE: ${{ github.ref_name }}-turma-thalesmg
+          NAMESPACE: ${{ steps.namespace.outputs.name }}
       - name: Delete Namespace
         # if: ${{ always() }}
         uses: okteto/delete-namespace@2.5.2
         with:
-          namespace: ${{ github.ref_name }}-turma-thalesmg
+          namespace: ${{ steps.namespace.outputs.name }}
 
 ...
