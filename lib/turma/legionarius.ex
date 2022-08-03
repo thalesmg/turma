@@ -6,8 +6,8 @@ defmodule Turma.Legionarius do
   @prefix "turma-command:"
 
   @type start_opts :: %{
-          bind: {binary(), pos_integer()},
-          subscriptions: [binary()]
+          id: binary(),
+          bind: {binary(), pos_integer()}
         }
 
   @spec start_link(start_opts) :: {:ok, pid()} | {:error, term()}
@@ -17,24 +17,22 @@ defmodule Turma.Legionarius do
 
   @impl GenServer
   def init(opts) do
-    {:ok, sub_sock} = :chumak.socket(:sub)
+    dealer_sock =
+      case :chumak.socket(:dealer, to_charlist(opts.id)) do
+        {:ok, dealer_sock} -> dealer_sock
+        {:error, {:already_started, dealer_sock}} -> dealer_sock
+      end
+
     {:ok, router_sock} = :chumak.socket(:router)
     {iface, base_port_num} = Map.get(opts, :bind, {"localhost", 9877})
-    {:ok, _bind_pid0} = :chumak.bind(sub_sock, :tcp, to_charlist(iface), base_port_num)
+    {:ok, _bind_pid0} = :chumak.bind(dealer_sock, :tcp, to_charlist(iface), base_port_num)
     {:ok, _bind_pid1} = :chumak.bind(router_sock, :tcp, to_charlist(iface), base_port_num + 1)
-    subscriptions = Map.get(opts, :subscriptions, [])
 
-    Enum.each(
-      ["all" | subscriptions],
-      &:chumak.subscribe(sub_sock, [@prefix, &1])
-    )
-
-    # :chumak.subscribe(sub_sock, @prefix)
-    receiver_pid = spawn_link(__MODULE__, :receiver_loop, [self(), sub_sock])
+    receiver_pid = spawn_link(__MODULE__, :receiver_loop, [self(), dealer_sock])
 
     {:ok,
      %{
-       sub_sock: sub_sock,
+       dealer_sock: dealer_sock,
        router_sock: router_sock,
        receiver_pid: receiver_pid
      }}
@@ -52,7 +50,7 @@ defmodule Turma.Legionarius do
 
   @impl GenServer
   def handle_info(
-        {:data, receiver_pid, [@prefix <> _tag, data]},
+        {:data, receiver_pid, [@prefix, data]},
         state = %{receiver_pid: receiver_pid}
       ) do
     Logger.info("got data: #{inspect(data, pretty: true)}")
@@ -88,15 +86,15 @@ defmodule Turma.Legionarius do
     {:noreply, state}
   end
 
-  def receiver_loop(parent, sub_sock) do
-    case :chumak.recv_multipart(sub_sock) do
+  def receiver_loop(parent, dealer_sock) do
+    case :chumak.recv_multipart(dealer_sock) do
       {:ok, data} ->
         send(parent, {:data, self(), data})
-        receiver_loop(parent, sub_sock)
+        receiver_loop(parent, dealer_sock)
 
       error ->
         Logger.error("legionarius receiver error: #{inspect(error, pretty: true)}")
-        receiver_loop(parent, sub_sock)
+        receiver_loop(parent, dealer_sock)
     end
   end
 

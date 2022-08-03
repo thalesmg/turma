@@ -55,7 +55,7 @@ jobs:
         env:
           NAMESPACE: ${{ github.ref_name }}-turma-thalesmg
       - name: Delete Namespace
-        if: ${{ always() }}
+        # if: ${{ always() }}
         uses: okteto/delete-namespace@2.5.2
         with:
           namespace: ${{ github.ref_name }}-turma-thalesmg

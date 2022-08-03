@@ -5,26 +5,45 @@ defmodule Turma.Decurio do
 
   @prefix "turma-command:"
 
+  @type tag() :: binary()
+  @type peer() :: binary()
+  @type job_id() :: reference()
+  @type inventory() :: %{tag() => [peer()]}
+  @type start_opts :: %{
+          inventory: inventory(),
+          name: binary()
+        }
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @spec run((() -> term())) :: {:ok, job_id()}
   def run(fun) when is_function(fun, 0) do
-    run("all", fun)
+    run(:all, fun)
   end
 
+  @spec run(binary(), (() -> term())) :: {:ok, job_id()}
   def run("" <> tag, fun) when is_function(fun, 0) do
-    GenServer.call(__MODULE__, {:run, tag, fun})
+    run([tag], fun)
   end
 
+  @spec run(:all | [binary()], (() -> term())) :: {:ok, job_id()}
+  def run(tags, fun) when (is_list(tags) or is_atom(tags)) and is_function(fun, 0) do
+    GenServer.call(__MODULE__, {:run, tags, fun})
+  end
+
+  @spec get(job_id()) :: :error | {:ok, map()}
   def get(id) do
     GenServer.call(__MODULE__, {:get, id})
   end
 
+  @spec get(job_id) :: map()
   def get_all() do
     GenServer.call(__MODULE__, :get_all)
   end
 
+  @spec set_inventory(inventory()) :: :ok
   def set_inventory(inventory = %{}) do
     GenServer.call(__MODULE__, {:set_inventory, inventory})
   end
@@ -39,23 +58,30 @@ defmodule Turma.Decurio do
 
     {:ok, sup} = Task.Supervisor.start_link()
 
+    inverted_inventory =
+      desired_inventory
+      |> Stream.flat_map(fn {tag, endpoints} ->
+        Enum.map(endpoints, &{&1, tag})
+      end)
+      |> Enum.dedup()
+
     {ok, failed} =
       Task.Supervisor.async_stream_nolink(
         sup,
-        desired_inventory,
-        fn {endpoint, tags} ->
+        inverted_inventory,
+        fn {endpoint, tag} ->
           [host, _] = String.split(endpoint, ":", parts: 2)
 
           if host != "localhost" do
             {_, 0} =
               System.cmd(
                 "ssh",
-                [host, "-o", "StrictHostKeyChecking=no", "bash", "-c", "'#{cmd}'"],
+                [host, "-o", "StrictHostKeyChecking=no", "bash", "-c", "\"#{cmd}\""],
                 stderr_to_stdout: true
               )
           end
 
-          {endpoint, tags}
+          {endpoint, tag}
         end,
         max_concurrency: 10,
         timeout: 60_000,
@@ -63,7 +89,13 @@ defmodule Turma.Decurio do
       )
       |> Enum.split_with(&match?({:ok, _}, &1))
 
-    inventory = Map.new(ok, fn {:ok, {endpoint, tags}} -> {endpoint, tags} end)
+    inventory =
+      ok
+      |> Stream.map(fn {:ok, {endpoint, tag}} -> {tag, endpoint} end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Map.update("decurio", [Application.get_env(Turma.Legionarius, :id)], fn vals ->
+        [Application.get_env(Turma.Legionarius, :id) | vals]
+      end)
 
     :ok = set_inventory(inventory)
 
@@ -74,7 +106,7 @@ defmodule Turma.Decurio do
   def init(opts) do
     inventory = Map.get(opts, :inventory, %{})
     my_name = Map.get(opts, :name, "decurio")
-    {:ok, pub_sock} = :chumak.socket(:pub)
+    {:ok, router_sock} = :chumak.socket(:router)
 
     dealer_sock =
       case :chumak.socket(:dealer, to_charlist(my_name)) do
@@ -82,14 +114,14 @@ defmodule Turma.Decurio do
         {:error, {:already_started, dealer_sock}} -> dealer_sock
       end
 
-    connect_all(inventory, pub_sock, dealer_sock)
+    connect_all(inventory, router_sock, dealer_sock)
     receiver_pid = spawn_link(__MODULE__, :receiver_loop, [self(), dealer_sock])
 
     {:ok,
      %{
        my_name: my_name,
        inventory: inventory,
-       pub_sock: pub_sock,
+       router_sock: router_sock,
        dealer_sock: dealer_sock,
        receiver_pid: receiver_pid,
        responses: %{}
@@ -97,13 +129,19 @@ defmodule Turma.Decurio do
   end
 
   @impl GenServer
-  def handle_call({:run, tag, fun}, _from, state = %{pub_sock: pub_sock, my_name: my_name})
+  def handle_call({:run, tags, fun}, _from, state = %{router_sock: router_sock, my_name: my_name})
       when is_function(fun, 0) do
     if is_function(fun, 0) do
       # fixme: store this in state
       id = :erlang.make_ref()
-      packet = [@prefix <> tag, :erlang.term_to_binary({:run, id, my_name, fun})]
-      :chumak.send_multipart(pub_sock, packet)
+
+      state.inventory
+      |> match_peers(tags)
+      |> Enum.each(fn peer ->
+        packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
+        :chumak.send_multipart(router_sock, packet)
+      end)
+
       {:reply, {:ok, id}, state}
     else
       {:reply, {:error, {:bad_fun, fun}}, state}
@@ -113,7 +151,7 @@ defmodule Turma.Decurio do
   def handle_call({:set_inventory, inventory}, _from, state) do
     state = %{state | inventory: inventory}
     # FIXME: diff inventory and disconnect from old hosts?!?!
-    connect_all(inventory, state.pub_sock, state.dealer_sock)
+    connect_all(inventory, state.router_sock, state.dealer_sock)
     {:reply, :ok, state}
   end
 
@@ -162,10 +200,14 @@ defmodule Turma.Decurio do
     {:noreply, state}
   end
 
-  defp connect_all(inventory, pub_sock, dealer_sock) do
-    Enum.each(inventory, fn {host, _tags} ->
+  defp connect_all(inventory, router_sock, dealer_sock) do
+    inventory
+    |> Map.values()
+    |> Enum.dedup()
+    |> Stream.flat_map(& &1)
+    |> Enum.each(fn host ->
       {host, base_port} = parse_host(host)
-      :chumak.connect(pub_sock, :tcp, to_charlist(host), base_port)
+      :chumak.connect(router_sock, :tcp, to_charlist(host), base_port)
       :chumak.connect(dealer_sock, :tcp, to_charlist(host), base_port + 1)
     end)
   end
@@ -186,5 +228,20 @@ defmodule Turma.Decurio do
         Logger.error("decurio receiver error: #{inspect(error, pretty: true)}")
         receiver_loop(parent, dealer_sock)
     end
+  end
+
+  defp match_peers(inventory, :all) do
+    inventory
+    |> Map.values()
+    |> Enum.flat_map(& &1)
+    |> Enum.dedup()
+  end
+
+  defp match_peers(inventory, tags) do
+    inventory
+    |> Map.take(tags)
+    |> Map.values()
+    |> Enum.flat_map(& &1)
+    |> Enum.dedup()
   end
 end

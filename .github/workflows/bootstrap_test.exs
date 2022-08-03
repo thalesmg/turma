@@ -22,27 +22,36 @@ run = fn cmd ->
   {res, rc}
 end
 
+dec_endpoint = "node0.#{namespace}.svc.cluster.local:19876"
+leg_endpoint = "node1.#{namespace}.svc.cluster.local:19876"
+cfg = (quote do
+  config Turma.Legionarius,
+    bind: {"0.0.0.0", 19876},
+    id: unquote(leg_endpoint)
+end
+|> Macro.to_string()
+|> Base.encode64())
+
 {res, rc} =
   run.("""
   Turma.Decurio.bootstrap(%{
     desired_inventory: %{
-      "localhost:19876" => ["decurio"],
-      "node1.#{namespace}.svc.cluster.local:19876" => ["legionarius"]
+      "legionarius" => ["#{leg_endpoint}"],
     },
     command:
-      "mkdir -p /legionarius && tar -C /legionarius -xf /tmp/legionarius-*.tar.gz && /legionarius/bin/legionarius daemon_iex"
+      "mkdir -p /legionarius && tar -C /legionarius -xf \\\$(find /tmp/ -name legionarius-*.tar.gz) && echo #{cfg} | base64 -d - >> /legionarius/releases/*/runtime.exs && /legionarius/bin/legionarius daemon_iex"
   })
   |> IO.inspect()
   """)
 
+IO.puts(res)
 0 = rc
 
-leg_endpoint = "node1.#{namespace}.svc.cluster.local:19876"
 {%{
    failed: [],
    inventory: %{
-     "localhost:19876" => ["decurio"],
-     ^leg_endpoint => ["legionarius"]
+     "decurio" => [^dec_endpoint],
+     "legionarius" => [^leg_endpoint],
    }
  }, _} = Code.eval_string(res)
 
@@ -58,6 +67,7 @@ Process.sleep(10_000)
   |> IO.inspect()
   """)
 
+IO.puts(res)
 0 = rc
 {id_cl, _} = Code.eval_string(res)
 
@@ -71,6 +81,7 @@ Process.sleep(10_000)
   |> IO.inspect()
   """)
 
+IO.puts(res)
 0 = rc
 
 {{:ok,
