@@ -42,11 +42,13 @@ defmodule TurmaTest do
         {n, 29876 + 2 * i}
       end)
 
-    inventory =
-      Map.new(nodes, fn n ->
-        host = "localhost:#{Map.fetch!(binds, n)}"
-        {host, []}
-      end)
+    inventory = %{
+      "legionarius" =>
+        Enum.map(legs, fn leg ->
+          "localhost:#{Map.fetch!(binds, leg)}"
+        end),
+      "decurio" => ["localhost:#{Map.fetch!(binds, dec_node)}"]
+    }
 
     Enum.each(nodes, fn n ->
       :ok =
@@ -59,6 +61,7 @@ defmodule TurmaTest do
     end)
 
     set_inventory? = Map.get(env, :set_inventory?, true)
+
     if set_inventory? do
       :ok = :erpc.call(dec_node, Application, :put_env, [Decurio, :inventory, inventory])
     end
@@ -73,14 +76,12 @@ defmodule TurmaTest do
           {"localhost", Map.fetch!(binds, n)}
         ])
 
-      subs =
-        if n == dec_node do
-          ["decurio"]
-        else
-          ["legionarius"]
-        end
-
-      :ok = :erpc.call(n, Application, :put_env, [Legionarius, :subscriptions, subs])
+      :ok =
+        :erpc.call(n, Application, :put_env, [
+          Legionarius,
+          :id,
+          "localhost:#{Map.fetch!(binds, n)}"
+        ])
     end)
 
     Enum.each(nodes, fn n ->
@@ -236,18 +237,18 @@ defmodule TurmaTest do
            ) == {:ok, expected}
   end
 
-  test "set_inventory", %{legs: legs, binds: binds, dec: dec} do
-    inv =
-      Map.new(legs, fn leg ->
-        {"localhost:#{Map.fetch!(binds, leg)}", ["legionarius"]}
-      end)
+  @tag set_inventory?: false
+  test "set_inventory", %{legs: [leg1 | _], binds: binds, dec: dec} do
+    inv = %{
+      "tag" => ["localhost:#{Map.fetch!(binds, leg1)}"]
+    }
 
     assert :erpc.call(
-               dec,
-               Decurio,
-               :set_inventory,
-               [inv]
-             ) == :ok
+             dec,
+             Decurio,
+             :set_inventory,
+             [inv]
+           ) == :ok
 
     Process.sleep(1_000)
 
@@ -256,15 +257,12 @@ defmodule TurmaTest do
                dec,
                Decurio,
                :run,
-               ["legionarius", &Utils.success/0]
+               ["tag", &Utils.success/0]
              )
 
     Process.sleep(1_000)
 
-    expected =
-      Map.new(legs, fn n ->
-        {n, {:ok, n}}
-      end)
+    expected = %{leg1 => {:ok, leg1}}
 
     assert :erpc.call(
              dec,

@@ -16,8 +16,8 @@ defmodule Turma.Application do
               {Turma.Decurio, :start_link,
                [
                  %{
-                   inventory: Application.get_env(Turma.Decurio, :inventory),
-                   name: Application.get_env(Turma.Decurio, :name)
+                   inventory: Application.get_env(Turma.Decurio, :inventory, %{}),
+                   name: Application.get_env(Turma.Decurio, :name, "decurio")
                  }
                ]},
             restart: :permanent,
@@ -27,6 +27,8 @@ defmodule Turma.Application do
       else
         []
       end
+
+    {bind_iface, port} = Application.get_env(Turma.Legionarius, :bind, {"0.0.0.0", 19876})
 
     children =
       [
@@ -38,8 +40,8 @@ defmodule Turma.Application do
             {Turma.Legionarius, :start_link,
              [
                %{
-                 bind: Application.get_env(Turma.Legionarius, :bind),
-                 subscriptions: Application.get_env(Turma.Legionarius, :subscriptions)
+                 id: Application.get_env(Turma.Legionarius, :id, hostname(port)),
+                 bind: {bind_iface, port}
                }
              ]},
           restart: :permanent,
@@ -51,5 +53,10 @@ defmodule Turma.Application do
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Turma.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp hostname(port) do
+    {:ok, host} = :inet.gethostname()
+    to_string(host) <> ":" <> to_string(port)
   end
 end

@@ -26,8 +26,8 @@ end
   run.("""
   Turma.Decurio.bootstrap(%{
     desired_inventory: %{
-      "localhost:19876" => ["decurio"],
-      "node1.#{namespace}.svc.cluster.local:19876" => ["legionarius"]
+      "decurio" => ["localhost:19876"],
+      "legionarius" => ["localhost:19876", "node1.#{namespace}.svc.cluster.local:19876"],
     },
     command:
       "mkdir -p /legionarius && tar -C /legionarius -xf /tmp/legionarius-*.tar.gz && /legionarius/bin/legionarius daemon_iex"
@@ -41,8 +41,8 @@ leg_endpoint = "node1.#{namespace}.svc.cluster.local:19876"
 {%{
    failed: [],
    inventory: %{
-     "localhost:19876" => ["decurio"],
-     ^leg_endpoint => ["legionarius"]
+     "decurio" => ["localhost:19876"],
+     "legionarius" => ["localhost:19876", ^leg_endpoint],
    }
  }, _} = Code.eval_string(res)
 
