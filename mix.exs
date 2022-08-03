@@ -28,7 +28,7 @@ defmodule Turma.MixProject do
   defp deps do
     [
       {:chumak, "~> 1.4"},
-      {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
     ]
   end
 

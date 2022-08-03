@@ -10,10 +10,9 @@ defmodule Turma.Decurio do
   @type job_id() :: reference()
   @type inventory() :: %{tag() => [peer()]}
   @type start_opts :: %{
-    inventory: inventory(),
-    name: binary()
-  }
-
+          inventory: inventory(),
+          name: binary()
+        }
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -77,7 +76,7 @@ defmodule Turma.Decurio do
             {_, 0} =
               System.cmd(
                 "ssh",
-                [host, "-o", "StrictHostKeyChecking=no", "bash", "-c", "'#{cmd}'"],
+                [host, "-o", "StrictHostKeyChecking=no", "bash", "-c", "\"#{cmd}\""],
                 stderr_to_stdout: true
               )
           end
@@ -94,6 +93,9 @@ defmodule Turma.Decurio do
       ok
       |> Stream.map(fn {:ok, {endpoint, tag}} -> {tag, endpoint} end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Map.update("decurio", [Application.get_env(Turma.Legionarius, :id)], fn vals ->
+        [Application.get_env(Turma.Legionarius, :id) | vals]
+      end)
 
     :ok = set_inventory(inventory)
 
