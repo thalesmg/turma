@@ -9,10 +9,15 @@ defmodule Turma.Decurio do
   @type peer() :: binary()
   @type job_id() :: reference()
   @type inventory() :: %{tag() => [peer()]}
-  @type start_opts :: %{
+  @type start_opts() :: %{
           inventory: inventory(),
           name: binary()
         }
+  @type result() ::
+          :pending
+          | {:done, term()}
+          | {:error, term()}
+          | {:throw, term()}
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -33,12 +38,12 @@ defmodule Turma.Decurio do
     GenServer.call(__MODULE__, {:run, tags, fun})
   end
 
-  @spec get(job_id()) :: :error | {:ok, map()}
+  @spec get(job_id()) :: :error | {:ok, %{peer() => result()}}
   def get(id) do
     GenServer.call(__MODULE__, {:get, id})
   end
 
-  @spec get(job_id) :: map()
+  @spec get_all() :: %{job_id() => %{peer() => result()}}
   def get_all() do
     GenServer.call(__MODULE__, :get_all)
   end
@@ -129,23 +134,21 @@ defmodule Turma.Decurio do
   end
 
   @impl GenServer
-  def handle_call({:run, tags, fun}, _from, state = %{router_sock: router_sock, my_name: my_name})
-      when is_function(fun, 0) do
-    if is_function(fun, 0) do
-      # fixme: store this in state
-      id = :erlang.make_ref()
+  def handle_call({:run, tags, fun}, _from, state = %{router_sock: router_sock, my_name: my_name}) do
+    # fixme: store this in state
+    id = :erlang.make_ref()
 
-      state.inventory
-      |> match_peers(tags)
-      |> Enum.each(fn peer ->
-        packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
-        :chumak.send_multipart(router_sock, packet)
-      end)
+    peers = match_peers(state.inventory, tags)
 
-      {:reply, {:ok, id}, state}
-    else
-      {:reply, {:error, {:bad_fun, fun}}, state}
-    end
+    Enum.each(peers, fn peer ->
+      packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
+      :chumak.send_multipart(router_sock, packet)
+    end)
+
+    responses = Map.put(state.responses, id, Map.new(peers, &{&1, :pending}))
+    state = %{state | responses: responses}
+
+    {:reply, {:ok, id}, state}
   end
 
   def handle_call({:set_inventory, inventory}, _from, state) do

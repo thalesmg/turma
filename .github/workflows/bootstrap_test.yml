@@ -43,7 +43,9 @@ jobs:
       - name: set namespace
         id: namespace
         run: |
-          echo ::set-output name=name::"${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref) || github.ref_name }}-turma-thalesmg"
+          NS="${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref) || github.ref_name }}-turma-thalesmg"
+          NS=$(echo $NS | tr A-Z a-z | tr -cd \\-a-z)
+          echo ::set-output name=name::"$NS"
       - name: Create Namespace
         uses: okteto/create-namespace@2.5.2
         with:
