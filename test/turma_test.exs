@@ -180,6 +180,11 @@ defmodule TurmaTest do
            ) == {:ok, expected_done}
   end
 
+  test "reply", %{dec: dec} do
+    res = :erpc.call(dec, &Utils.test_reply/0)
+    assert res == :ok
+  end
+
   test "error", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(

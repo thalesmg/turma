@@ -4,6 +4,9 @@ defmodule Turma.Decurio do
   require Logger
 
   @prefix "turma-command:"
+  @expected :"$expected"
+  @returned :"$returned"
+  @caller :"$caller"
 
   @type tag() :: binary()
   @type peer() :: binary()
@@ -134,8 +137,11 @@ defmodule Turma.Decurio do
   end
 
   @impl GenServer
-  def handle_call({:run, tags, fun}, _from, state = %{router_sock: router_sock, my_name: my_name}) do
-    # fixme: store this in state
+  def handle_call(
+        {:run, tags, fun},
+        _from = {caller, _tag},
+        state = %{router_sock: router_sock, my_name: my_name}
+      ) do
     id = :erlang.make_ref()
 
     peers = match_peers(state.inventory, tags)
@@ -145,7 +151,14 @@ defmodule Turma.Decurio do
       :chumak.send_multipart(router_sock, packet)
     end)
 
-    responses = Map.put(state.responses, id, Map.new(peers, &{&1, :pending}))
+    results =
+      peers
+      |> Map.new(&{&1, :pending})
+      |> Map.put(@expected, length(peers))
+      |> Map.put(@returned, 0)
+      |> Map.put(@caller, caller)
+
+    responses = Map.put(state.responses, id, results)
     state = %{state | responses: responses}
 
     {:reply, {:ok, id}, state}
@@ -159,11 +172,17 @@ defmodule Turma.Decurio do
   end
 
   def handle_call({:get, id}, _from, state = %{responses: responses}) do
-    {:reply, Map.fetch(responses, id), state}
+    res =
+      with {:ok, results} <- Map.fetch(responses, id) do
+        {:ok, clean_results(results)}
+      end
+
+    {:reply, res, state}
   end
 
   def handle_call(:get_all, _from, state = %{responses: responses}) do
-    {:reply, responses, state}
+    res = Map.new(responses, fn {k, v} -> {k, clean_results(v)} end)
+    {:reply, res, state}
   end
 
   def handle_call(_call, _from, state) do
@@ -185,12 +204,20 @@ defmodule Turma.Decurio do
           "response for #{inspect(id)}, #{inspect(responder)}: #{inspect(res, pretty: true)}"
         )
 
-        responses =
-          Map.update(state.responses, id, %{responder => res}, fn old ->
-            Map.put(old, responder, res)
-          end)
+        results =
+          state.responses
+          |> Map.fetch!(id)
+          |> Map.put(responder, res)
+          |> Map.update!(@returned, &(&1 + 1))
+
+        responses = Map.put(state.responses, id, results)
 
         state = %{state | responses: responses}
+
+        if results[@expected] == results[@returned] do
+          send(results[@caller], {:job_finished, id})
+        end
+
         {:noreply, state}
 
       x ->
@@ -246,5 +273,9 @@ defmodule Turma.Decurio do
     |> Map.values()
     |> Enum.flat_map(& &1)
     |> Enum.dedup()
+  end
+
+  defp clean_results(results) do
+    Map.drop(results, [@returned, @caller, @expected])
   end
 end

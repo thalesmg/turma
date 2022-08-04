@@ -5,7 +5,7 @@ set -xeu
 export LC_ALL=C.UTF-8
 export LANG=C.UTF-8
 
-wget -L https://github.com/okteto/okteto/releases/download/2.5.2/okteto-Linux-x86_64 -O okteto
+wget -qL https://github.com/okteto/okteto/releases/download/2.5.2/okteto-Linux-x86_64 -O okteto
 chmod +x ./okteto
 ./okteto context use --token=${OKTETO_TOKEN} --namespace=${NAMESPACE}
 ./okteto kubeconfig
