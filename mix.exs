@@ -38,14 +38,34 @@ defmodule Turma.MixProject do
         applications: [
           turma: :permanent
         ],
-        steps: [:assemble, :tar]
+        config_providers: [
+          {Config.Reader, {:system, "RELEASE_ROOT", "/etc/runtime.exs"}}
+        ],
+        steps: [:assemble, &prepare_tar_overlays/1, :tar]
       ],
       decurio: [
         applications: [
           turma: :permanent
         ],
-        steps: [:assemble, :tar]
+        config_providers: [
+          {Config.Reader, {:system, "RELEASE_ROOT", "/etc/runtime.exs"}}
+        ],
+        steps: [:assemble, &prepare_tar_overlays/1, :tar]
       ]
     ]
+  end
+
+  defp prepare_tar_overlays(release) do
+    overwrite? = Keyword.get(release.options, :overwrite, false)
+
+    etc = Path.join(release.path, "etc")
+
+    Mix.Generator.copy_file(
+      "config/runtime.exs",
+      Path.join(etc, "runtime.exs"),
+      force: overwrite?
+    )
+
+    Map.update!(release, :overlays, &["etc" | &1])
   end
 end
