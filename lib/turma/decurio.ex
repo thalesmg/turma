@@ -36,6 +36,11 @@ defmodule Turma.Decurio do
     run({:tags, [tag]}, fun)
   end
 
+  @spec run([binary()], (() -> term())) :: {:ok, job_id()}
+  def run(tags, fun) when is_list(tags) and is_function(fun, 0) do
+    run({:tags, tags}, fun)
+  end
+
   @spec run(Regex.t(), (() -> term())) :: {:ok, job_id()}
   def run(regex = %Regex{}, fun) when is_function(fun, 0) do
     run({:regex, regex}, fun)
