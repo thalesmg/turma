@@ -33,11 +33,27 @@ defmodule Turma.Decurio do
 
   @spec run(binary(), (() -> term())) :: {:ok, job_id()}
   def run("" <> tag, fun) when is_function(fun, 0) do
-    run([tag], fun)
+    run({:tags, [tag]}, fun)
   end
 
-  @spec run(:all | [binary()], (() -> term())) :: {:ok, job_id()}
-  def run(tags, fun) when (is_list(tags) or is_atom(tags)) and is_function(fun, 0) do
+  @spec run(Regex.t(), (() -> term())) :: {:ok, job_id()}
+  def run(regex = %Regex{}, fun) when is_function(fun, 0) do
+    run({:regex, regex}, fun)
+  end
+
+  @spec run((inventory() -> [peer()]), (() -> term())) :: {:ok, job_id()}
+  def run(filter, fun) when is_function(filter, 1) and is_function(fun, 0) do
+    run({:filter, filter}, fun)
+  end
+
+  @spec run(
+          :all
+          | {:tags, [tag()]}
+          | {:regex, Regex.t()}
+          | {:filter, (inventory() -> [peer()])},
+          (() -> term())
+        ) :: {:ok, job_id()}
+  def run(tags, fun) when (is_tuple(tags) or is_atom(tags)) and is_function(fun, 0) do
     GenServer.call(__MODULE__, {:run, tags, fun})
   end
 
@@ -138,13 +154,13 @@ defmodule Turma.Decurio do
 
   @impl GenServer
   def handle_call(
-        {:run, tags, fun},
+        {:run, selector, fun},
         _from = {caller, _tag},
         state = %{router_sock: router_sock, my_name: my_name}
       ) do
     id = :erlang.make_ref()
 
-    peers = match_peers(state.inventory, tags)
+    peers = match_peers(state.inventory, selector)
 
     Enum.each(peers, fn peer ->
       packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
@@ -260,18 +276,38 @@ defmodule Turma.Decurio do
     end
   end
 
-  defp match_peers(inventory, :all) do
+  def match_peers(inventory, :all) do
     inventory
     |> Map.values()
-    |> Enum.flat_map(& &1)
+    |> Stream.flat_map(& &1)
     |> Enum.dedup()
   end
 
-  defp match_peers(inventory, tags) do
+  def match_peers(inventory, {:tags, tags}) do
     inventory
     |> Map.take(tags)
     |> Map.values()
-    |> Enum.flat_map(& &1)
+    |> Stream.flat_map(& &1)
+    |> Enum.dedup()
+  end
+
+  def match_peers(inventory, {:regex, regex}) do
+    inventory
+    |> Map.values()
+    |> Stream.flat_map(& &1)
+    |> Stream.filter(&(&1 =~ regex))
+    |> Enum.dedup()
+  end
+
+  def match_peers(inventory, {:filter, filter}) do
+    all =
+      inventory
+      |> match_peers(:all)
+      |> MapSet.new()
+
+    inventory
+    |> filter.()
+    |> Stream.filter(&MapSet.member?(all, &1))
     |> Enum.dedup()
   end
 
