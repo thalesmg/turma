@@ -1,0 +1,110 @@
+* Turma
+
+Very simple and naive command & control (C2) application for issuing
+commands to several machines in parallel.
+
+The main purpose of this is to replace Ansible for some tasks that
+require more complex operations, and also to overcome Ansible's
+limitations of seemingly running only a few jobs in parallel (which I
+known can be increased) and then ofter getting the SSH connection in a
+stuck state or losing the connection.  If one task takes too long or
+gets stuck, the next hosts and the whole playbook crawls to a halt.
+
+This project is /not/ for use in production, as it's completely
+unsafe.
+
+* Setup
+
+Start a ~Legionarius~ node on each machine you want to control, and
+one ~Decurio~ to use as the command central.  The configuration lives
+at ~etc/runtime.exs~ inside the release root directory.
+
+On each ~Legionarius~, define its ~id~ as the endpoint you'll use to
+connect to it:
+
+#+BEGIN_SRC elixir
+config Turma.Legionarius,
+  bind: {"10.10.1.41", 19876},
+  id: "server-0.some.cluster:19876"
+#+END_SRC
+
+On ~Decurio~, define the inventory and then start it up:
+
+#+BEGIN_SRC elixir
+  config Turma.Decurio,
+    inventory: %{
+      "tag1" => [
+              "server-0.some.cluster:19876",
+              "server-1.some.cluster:19876",
+              # ...
+            ],
+      "tag2" => [
+              "server-1.some.cluster:19876",
+              "other-server-0.some.cluster:19876",
+            ],
+      # ...
+    },
+    name: "my-decurio"
+#+END_SRC
+
+** Examples
+
+Run something on all nodes:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  Decurio.run(fn -> node() end)
+#+END_SRC
+
+Run something on hosts with a specific tag:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  Decurio.run("tag", fn -> node() end)
+#+END_SRC
+
+Run something on hosts whose endpoint match a regex:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  Decurio.run(~r/^some-host-[0-9]+/, fn -> node() end)
+#+END_SRC
+
+Run something on hosts filtering directly on the inventory:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  filter = fn inventory ->
+    inventory
+    |> Map.fetch!("tag")
+    |> Enum.take_every(3)
+  end
+  Decurio.run(filter, fn -> node() end)
+#+END_SRC
+
+Get the results of a job (may change as each node returns results):
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  {:ok, id} = Decurio.run(fn -> node() end)
+  Decurio.get(id)
+#+END_SRC
+
+Get all jobs:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  Decurio.get_all()
+#+END_SRC
+
+Block until a job is done:
+
+#+BEGIN_SRC elixir
+  alias Turma.Decurio
+  {:ok, id} = Decurio.run(fn -> node() end)
+  res = receive do
+    {:job_finished, ^id} -> Decurio.get(id)
+  after
+    10_000 -> :timeout
+  end
+#+END_SRC

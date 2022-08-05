@@ -109,7 +109,7 @@ defmodule TurmaTest do
      }}
   end
 
-  test "success", %{nodes: nodes, peers: peers, dec: dec} do
+  test "success (all)", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -142,6 +142,95 @@ defmodule TurmaTest do
              :get_all,
              []
            ) == expected_all
+  end
+
+  test "success (tags)", %{nodes: nodes, legs: legs, peers: peers, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               ["legionarius", &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected =
+      Map.new(legs, fn n ->
+        {Map.fetch!(peers, n), {:done, n}}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
+
+    # tag list
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [["legionarius", "decurio"], &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected =
+      Map.new(nodes, fn n ->
+        {Map.fetch!(peers, n), {:done, n}}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
+  end
+
+  test "success (regex)", %{peers: peers, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [~r/localhost:29876/, &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected = %{Map.fetch!(peers, dec) => {:done, dec}}
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
+  end
+
+  test "success (filter)", %{legs: [leg1 | _], peers: peers, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [&Utils.filter1/1, &Utils.success/0]
+             )
+
+    Process.sleep(1_000)
+
+    expected = %{Map.fetch!(peers, leg1) => {:done, leg1}}
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected}
   end
 
   test "pendings", %{nodes: nodes, peers: peers, dec: dec} do

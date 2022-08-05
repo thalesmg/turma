@@ -18,6 +18,12 @@ defmodule Turma.Test.Utils do
     end
   end
 
+  def filter1(inv) do
+    inv
+    |> Map.fetch!("legionarius")
+    |> Enum.take_every(2)
+  end
+
   def error_fn() do
     :erlang.error(:boom)
   end
