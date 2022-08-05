@@ -86,6 +86,6 @@ IO.puts(res)
 
 {{:ok,
   %{
-    decurio@node0: {:ok, :decurio@node0},
-    legionarius@node1: {:ok, :legionarius@node1}
+    ^dec_endpoint => {:done, :decurio@node0},
+    ^leg_endpoint => {:done, :legionarius@node1}
   }}, _} = Code.eval_string(res)

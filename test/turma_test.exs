@@ -42,6 +42,8 @@ defmodule TurmaTest do
         {n, 29876 + 2 * i}
       end)
 
+    peers = Map.new(nodes, &{&1, "localhost:#{Map.fetch!(binds, &1)}"})
+
     inventory = %{
       "legionarius" =>
         Enum.map(legs, fn leg ->
@@ -80,7 +82,7 @@ defmodule TurmaTest do
         :erpc.call(n, Application, :put_env, [
           Legionarius,
           :id,
-          "localhost:#{Map.fetch!(binds, n)}"
+          Map.fetch!(peers, n)
         ])
     end)
 
@@ -102,11 +104,12 @@ defmodule TurmaTest do
        legs: legs,
        dec: dec_node,
        binds: binds,
+       peers: peers,
        inventory: inventory
      }}
   end
 
-  test "success", %{nodes: nodes, dec: dec} do
+  test "success", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -119,7 +122,7 @@ defmodule TurmaTest do
 
     expected =
       Map.new(nodes, fn n ->
-        {n, {:ok, n}}
+        {Map.fetch!(peers, n), {:done, n}}
       end)
 
     expected_all = %{
@@ -141,7 +144,48 @@ defmodule TurmaTest do
            ) == expected_all
   end
 
-  test "error", %{nodes: nodes, dec: dec} do
+  test "pendings", %{nodes: nodes, peers: peers, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [&Utils.delayed_success/0]
+             )
+
+    expected_pending =
+      Map.new(nodes, fn n ->
+        {Map.fetch!(peers, n), :pending}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected_pending}
+
+    Process.sleep(1_500)
+
+    expected_done =
+      Map.new(nodes, fn n ->
+        {Map.fetch!(peers, n), {:done, n}}
+      end)
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, expected_done}
+  end
+
+  test "reply", %{dec: dec} do
+    res = :erpc.call(dec, &Utils.test_reply/0)
+    assert res == :ok
+  end
+
+  test "error", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -154,7 +198,7 @@ defmodule TurmaTest do
 
     expected =
       Map.new(nodes, fn n ->
-        {n, {:error, :boom}}
+        {Map.fetch!(peers, n), {:error, :boom}}
       end)
 
     assert :erpc.call(
@@ -165,7 +209,7 @@ defmodule TurmaTest do
            ) == {:ok, expected}
   end
 
-  test "raise", %{nodes: nodes, dec: dec} do
+  test "raise", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -178,7 +222,7 @@ defmodule TurmaTest do
 
     expected =
       Map.new(nodes, fn n ->
-        {n, {:error, %RuntimeError{message: "boom"}}}
+        {Map.fetch!(peers, n), {:error, %RuntimeError{message: "boom"}}}
       end)
 
     assert :erpc.call(
@@ -189,7 +233,7 @@ defmodule TurmaTest do
            ) == {:ok, expected}
   end
 
-  test "throw", %{nodes: nodes, dec: dec} do
+  test "throw", %{nodes: nodes, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -202,7 +246,7 @@ defmodule TurmaTest do
 
     expected =
       Map.new(nodes, fn n ->
-        {n, {:throw, :boom}}
+        {Map.fetch!(peers, n), {:throw, :boom}}
       end)
 
     assert :erpc.call(
@@ -213,7 +257,7 @@ defmodule TurmaTest do
            ) == {:ok, expected}
   end
 
-  test "subscriptions", %{legs: legs, dec: dec} do
+  test "subscriptions", %{legs: legs, peers: peers, dec: dec} do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -226,7 +270,7 @@ defmodule TurmaTest do
 
     expected =
       Map.new(legs, fn n ->
-        {n, {:ok, n}}
+        {Map.fetch!(peers, n), {:done, n}}
       end)
 
     assert :erpc.call(
@@ -238,7 +282,7 @@ defmodule TurmaTest do
   end
 
   @tag set_inventory?: false
-  test "set_inventory", %{legs: [leg1 | _], binds: binds, dec: dec} do
+  test "set_inventory", %{legs: [leg1 | _], peers: peers, binds: binds, dec: dec} do
     inv = %{
       "tag" => ["localhost:#{Map.fetch!(binds, leg1)}"]
     }
@@ -262,7 +306,7 @@ defmodule TurmaTest do
 
     Process.sleep(1_000)
 
-    expected = %{leg1 => {:ok, leg1}}
+    expected = %{Map.fetch!(peers, leg1) => {:done, leg1}}
 
     assert :erpc.call(
              dec,

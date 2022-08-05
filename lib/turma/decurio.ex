@@ -4,15 +4,23 @@ defmodule Turma.Decurio do
   require Logger
 
   @prefix "turma-command:"
+  @expected :"$expected"
+  @returned :"$returned"
+  @caller :"$caller"
 
   @type tag() :: binary()
   @type peer() :: binary()
   @type job_id() :: reference()
   @type inventory() :: %{tag() => [peer()]}
-  @type start_opts :: %{
+  @type start_opts() :: %{
           inventory: inventory(),
           name: binary()
         }
+  @type result() ::
+          :pending
+          | {:done, term()}
+          | {:error, term()}
+          | {:throw, term()}
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -25,20 +33,36 @@ defmodule Turma.Decurio do
 
   @spec run(binary(), (() -> term())) :: {:ok, job_id()}
   def run("" <> tag, fun) when is_function(fun, 0) do
-    run([tag], fun)
+    run({:tags, [tag]}, fun)
   end
 
-  @spec run(:all | [binary()], (() -> term())) :: {:ok, job_id()}
-  def run(tags, fun) when (is_list(tags) or is_atom(tags)) and is_function(fun, 0) do
+  @spec run(Regex.t(), (() -> term())) :: {:ok, job_id()}
+  def run(regex = %Regex{}, fun) when is_function(fun, 0) do
+    run({:regex, regex}, fun)
+  end
+
+  @spec run((inventory() -> [peer()]), (() -> term())) :: {:ok, job_id()}
+  def run(filter, fun) when is_function(filter, 1) and is_function(fun, 0) do
+    run({:filter, filter}, fun)
+  end
+
+  @spec run(
+          :all
+          | {:tags, [tag()]}
+          | {:regex, Regex.t()}
+          | {:filter, (inventory() -> [peer()])},
+          (() -> term())
+        ) :: {:ok, job_id()}
+  def run(tags, fun) when (is_tuple(tags) or is_atom(tags)) and is_function(fun, 0) do
     GenServer.call(__MODULE__, {:run, tags, fun})
   end
 
-  @spec get(job_id()) :: :error | {:ok, map()}
+  @spec get(job_id()) :: :error | {:ok, %{peer() => result()}}
   def get(id) do
     GenServer.call(__MODULE__, {:get, id})
   end
 
-  @spec get(job_id) :: map()
+  @spec get_all() :: %{job_id() => %{peer() => result()}}
   def get_all() do
     GenServer.call(__MODULE__, :get_all)
   end
@@ -129,23 +153,31 @@ defmodule Turma.Decurio do
   end
 
   @impl GenServer
-  def handle_call({:run, tags, fun}, _from, state = %{router_sock: router_sock, my_name: my_name})
-      when is_function(fun, 0) do
-    if is_function(fun, 0) do
-      # fixme: store this in state
-      id = :erlang.make_ref()
+  def handle_call(
+        {:run, selector, fun},
+        _from = {caller, _tag},
+        state = %{router_sock: router_sock, my_name: my_name}
+      ) do
+    id = :erlang.make_ref()
 
-      state.inventory
-      |> match_peers(tags)
-      |> Enum.each(fn peer ->
-        packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
-        :chumak.send_multipart(router_sock, packet)
-      end)
+    peers = match_peers(state.inventory, selector)
 
-      {:reply, {:ok, id}, state}
-    else
-      {:reply, {:error, {:bad_fun, fun}}, state}
-    end
+    Enum.each(peers, fn peer ->
+      packet = [peer, @prefix, :erlang.term_to_binary({:run, id, my_name, fun})]
+      :chumak.send_multipart(router_sock, packet)
+    end)
+
+    results =
+      peers
+      |> Map.new(&{&1, :pending})
+      |> Map.put(@expected, length(peers))
+      |> Map.put(@returned, 0)
+      |> Map.put(@caller, caller)
+
+    responses = Map.put(state.responses, id, results)
+    state = %{state | responses: responses}
+
+    {:reply, {:ok, id}, state}
   end
 
   def handle_call({:set_inventory, inventory}, _from, state) do
@@ -156,11 +188,17 @@ defmodule Turma.Decurio do
   end
 
   def handle_call({:get, id}, _from, state = %{responses: responses}) do
-    {:reply, Map.fetch(responses, id), state}
+    res =
+      with {:ok, results} <- Map.fetch(responses, id) do
+        {:ok, clean_results(results)}
+      end
+
+    {:reply, res, state}
   end
 
   def handle_call(:get_all, _from, state = %{responses: responses}) do
-    {:reply, responses, state}
+    res = Map.new(responses, fn {k, v} -> {k, clean_results(v)} end)
+    {:reply, res, state}
   end
 
   def handle_call(_call, _from, state) do
@@ -182,12 +220,20 @@ defmodule Turma.Decurio do
           "response for #{inspect(id)}, #{inspect(responder)}: #{inspect(res, pretty: true)}"
         )
 
-        responses =
-          Map.update(state.responses, id, %{responder => res}, fn old ->
-            Map.put(old, responder, res)
-          end)
+        results =
+          state.responses
+          |> Map.fetch!(id)
+          |> Map.put(responder, res)
+          |> Map.update!(@returned, &(&1 + 1))
+
+        responses = Map.put(state.responses, id, results)
 
         state = %{state | responses: responses}
+
+        if results[@expected] == results[@returned] do
+          send(results[@caller], {:job_finished, id})
+        end
+
         {:noreply, state}
 
       x ->
@@ -230,18 +276,42 @@ defmodule Turma.Decurio do
     end
   end
 
-  defp match_peers(inventory, :all) do
+  def match_peers(inventory, :all) do
     inventory
     |> Map.values()
-    |> Enum.flat_map(& &1)
+    |> Stream.flat_map(& &1)
     |> Enum.dedup()
   end
 
-  defp match_peers(inventory, tags) do
+  def match_peers(inventory, {:tags, tags}) do
     inventory
     |> Map.take(tags)
     |> Map.values()
-    |> Enum.flat_map(& &1)
+    |> Stream.flat_map(& &1)
     |> Enum.dedup()
+  end
+
+  def match_peers(inventory, {:regex, regex}) do
+    inventory
+    |> Map.values()
+    |> Stream.flat_map(& &1)
+    |> Stream.filter(&(&1 =~ regex))
+    |> Enum.dedup()
+  end
+
+  def match_peers(inventory, {:filter, filter}) do
+    all =
+      inventory
+      |> match_peers(:all)
+      |> MapSet.new()
+
+    inventory
+    |> filter.()
+    |> Stream.filter(&MapSet.member?(all, &1))
+    |> Enum.dedup()
+  end
+
+  defp clean_results(results) do
+    Map.drop(results, [@returned, @caller, @expected])
   end
 end

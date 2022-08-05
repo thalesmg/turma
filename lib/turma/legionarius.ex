@@ -32,6 +32,7 @@ defmodule Turma.Legionarius do
 
     {:ok,
      %{
+       my_id: opts.id,
        dealer_sock: dealer_sock,
        router_sock: router_sock,
        receiver_pid: receiver_pid
@@ -75,7 +76,7 @@ defmodule Turma.Legionarius do
   def handle_info({:done, id, decurio_identity, res}, state) do
     :chumak.send_multipart(state.router_sock, [
       decurio_identity,
-      :erlang.term_to_binary({:result, id, node(), res})
+      :erlang.term_to_binary({:result, id, state.my_id, res})
     ])
 
     {:noreply, state}
@@ -104,7 +105,7 @@ defmodule Turma.Legionarius do
     spawn(fn ->
       res =
         try do
-          {:ok, fun.()}
+          {:done, fun.()}
         catch
           kind, err ->
             {kind, err}
