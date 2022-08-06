@@ -1,7 +1,7 @@
 * Turma
 
-Very simple and naive command & control (C2) application for issuing
-commands to several machines in parallel.
+Very simple and naive application for issuing commands to several
+machines in parallel and retrieving results.
 
 The main purpose of this is to replace Ansible for some tasks that
 require more complex operations, and also to overcome Ansible's
