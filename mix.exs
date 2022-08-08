@@ -30,7 +30,7 @@ defmodule Turma.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:chumak, "~> 1.4"},
+      {:chumak, github: "zeromq/chumak", ref: "f89a873ea2d4b94d3d415228b72cf4f92f076af5"},
       {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
     ]
   end
