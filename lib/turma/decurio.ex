@@ -136,12 +136,7 @@ defmodule Turma.Decurio do
     inventory = Map.get(opts, :inventory, %{})
     my_name = Map.get(opts, :name, "decurio")
     {:ok, router_sock} = :chumak.socket(:router)
-
-    dealer_sock =
-      case :chumak.socket(:dealer, to_charlist(my_name)) do
-        {:ok, dealer_sock} -> dealer_sock
-        {:error, {:already_started, dealer_sock}} -> dealer_sock
-      end
+    {:ok, dealer_sock} = :chumak.socket(:dealer, to_charlist(my_name))
 
     connect_all(inventory, router_sock, dealer_sock)
     receiver_pid = spawn_link(__MODULE__, :receiver_loop, [self(), dealer_sock])

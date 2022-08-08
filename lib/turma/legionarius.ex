@@ -17,12 +17,7 @@ defmodule Turma.Legionarius do
 
   @impl GenServer
   def init(opts) do
-    dealer_sock =
-      case :chumak.socket(:dealer, to_charlist(opts.id)) do
-        {:ok, dealer_sock} -> dealer_sock
-        {:error, {:already_started, dealer_sock}} -> dealer_sock
-      end
-
+    {:ok, dealer_sock} = :chumak.socket(:dealer, to_charlist(opts.id))
     {:ok, router_sock} = :chumak.socket(:router)
     {iface, base_port_num} = Map.get(opts, :bind, {"localhost", 9877})
     {:ok, _bind_pid0} = :chumak.bind(dealer_sock, :tcp, to_charlist(iface), base_port_num)
