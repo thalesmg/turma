@@ -404,4 +404,80 @@ defmodule TurmaTest do
              [req_id]
            ) == {:ok, expected}
   end
+
+  test "cancel", %{nodes: nodes, peers: peers, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [&Utils.hang/0]
+             )
+
+    Process.sleep(1_000)
+    refs = Enum.map(nodes, &{&1, Process.monitor({:hang_test, &1})})
+
+    Enum.each(refs, fn {n, ref} ->
+      refute_receive {:DOWN, ^ref, _pid, :process, _}, 200, "node didn't register: #{n}"
+    end)
+
+    expected = Map.new(nodes, &{Map.fetch!(peers, &1), :pending})
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :cancel,
+             [req_id]
+           ) == {:ok, expected}
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == :error
+
+    Enum.each(refs, fn {n, ref} ->
+      assert_receive {:DOWN, ^ref, :process, _pid, _}, 1_000, "node didn't cancel: #{n}"
+    end)
+  end
+
+  test "cancel subset", %{nodes: nodes, peers: peers, legs: legs, dec: dec} do
+    assert {:ok, req_id} =
+             :erpc.call(
+               dec,
+               Decurio,
+               :run,
+               [&Utils.hang/0]
+             )
+
+    Process.sleep(1_000)
+    refs = Enum.map(nodes, &{&1, Process.monitor({:hang_test, &1})})
+
+    Enum.each(refs, fn {n, ref} ->
+      refute_receive {:DOWN, ^ref, :process, _pid, _}, 1_000, "node didn't register: #{n}"
+    end)
+
+    expected = Map.new(legs, &{Map.fetch!(peers, &1), :pending})
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :cancel,
+             [req_id, "legionarius"]
+           ) == {:ok, expected}
+
+    assert :erpc.call(
+             dec,
+             Decurio,
+             :get,
+             [req_id]
+           ) == {:ok, %{Map.fetch!(peers, dec) => :pending}}
+
+    refs
+    |> Enum.reject(fn {n, _ref} -> n == dec end)
+    |> Enum.each(fn {n, ref} ->
+      assert_receive {:DOWN, ^ref, :process, _pid, _}, 1_000, "node didn't cancel: #{n}"
+    end)
+  end
 end

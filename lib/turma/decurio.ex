@@ -16,11 +16,24 @@ defmodule Turma.Decurio do
           inventory: inventory(),
           name: binary()
         }
+  @type selector() ::
+          :all
+          | [tag()]
+          | Regex.t()
+          | (inventory() -> [peer()])
   @type result() ::
           :pending
           | {:done, term()}
           | {:error, term()}
           | {:throw, term()}
+  @type state() :: %{
+          my_name: binary(),
+          inventory: inventory(),
+          router_sock: pid(),
+          dealer_sock: pid(),
+          receiver_pid: pid(),
+          responses: %{job_id() => %{peer() => result()}}
+        }
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -70,6 +83,12 @@ defmodule Turma.Decurio do
   @spec get_all() :: %{job_id() => %{peer() => result()}}
   def get_all() do
     GenServer.call(__MODULE__, :get_all)
+  end
+
+  @spec cancel(job_id()) :: :ok
+  @spec cancel(job_id(), selector()) :: :ok
+  def cancel(id, selector \\ :all) do
+    GenServer.call(__MODULE__, {:cancel, id, to_selector(selector)})
   end
 
   @spec set_inventory(inventory()) :: :ok
@@ -133,6 +152,7 @@ defmodule Turma.Decurio do
 
   @impl GenServer
   def init(opts) do
+    Process.flag(:trap_exit, true)
     inventory = Map.get(opts, :inventory, %{})
     my_name = Map.get(opts, :name, "decurio")
     {:ok, router_sock} = :chumak.socket(:router)
@@ -201,6 +221,35 @@ defmodule Turma.Decurio do
     {:reply, res, state}
   end
 
+  def handle_call({:cancel, id, selector}, _from, state) do
+    {reply, state} =
+      case Map.fetch(state.responses, id) do
+        {:ok, results} ->
+          %{
+            cancel_packets: cancel_packets,
+            canceled_results: canceled_results,
+            remaining: remaining,
+            notify_caller?: notify_caller?,
+            responses: responses
+          } = cancel_job(id, selector, results, state)
+
+          Enum.each(cancel_packets, fn packet ->
+            :chumak.send_multipart(state.router_sock, packet)
+          end)
+
+          if notify_caller? do
+            send(remaining[@caller], {:job_finished, id})
+          end
+
+          {canceled_results, %{state | responses: responses}}
+
+        :error ->
+          {nil, state}
+      end
+
+    {:reply, {:ok, reply}, state}
+  end
+
   def handle_call(_call, _from, state) do
     {:reply, {:error, :bad_call}, state}
   end
@@ -220,6 +269,8 @@ defmodule Turma.Decurio do
           "response for #{inspect(id)}, #{inspect(responder)}: #{inspect(res, pretty: true)}"
         )
 
+        # FIXME: race condition: we receive a response for a cancelled
+        # job.
         results =
           state.responses
           |> Map.fetch!(id)
@@ -244,6 +295,13 @@ defmodule Turma.Decurio do
 
   def handle_info(_info, state) do
     {:noreply, state}
+  end
+
+  @impl GenServer
+  def terminate(_reason, state) do
+    :chumak.stop(state.dealer_sock)
+    :chumak.stop(state.router_sock)
+    state
   end
 
   defp connect_all(inventory, router_sock, dealer_sock) do
@@ -276,11 +334,12 @@ defmodule Turma.Decurio do
     end
   end
 
+  @spec match_peers(inventory(), selector()) :: [peer()]
   def match_peers(inventory, :all) do
     inventory
     |> Map.values()
     |> Stream.flat_map(& &1)
-    |> Enum.dedup()
+    |> Enum.uniq()
   end
 
   def match_peers(inventory, {:tags, tags}) do
@@ -288,7 +347,7 @@ defmodule Turma.Decurio do
     |> Map.take(tags)
     |> Map.values()
     |> Stream.flat_map(& &1)
-    |> Enum.dedup()
+    |> Enum.uniq()
   end
 
   def match_peers(inventory, {:regex, regex}) do
@@ -296,7 +355,7 @@ defmodule Turma.Decurio do
     |> Map.values()
     |> Stream.flat_map(& &1)
     |> Stream.filter(&(&1 =~ regex))
-    |> Enum.dedup()
+    |> Enum.uniq()
   end
 
   def match_peers(inventory, {:filter, filter}) do
@@ -308,7 +367,84 @@ defmodule Turma.Decurio do
     inventory
     |> filter.()
     |> Stream.filter(&MapSet.member?(all, &1))
-    |> Enum.dedup()
+    |> Enum.uniq()
+  end
+
+  @spec cancel_job(
+          job_id(),
+          selector(),
+          %{peer() => result()},
+          state()
+        ) :: %{
+          cancel_packets: [iodata()],
+          remaining: %{peer() => result()},
+          notify_caller?: boolean(),
+          responses: %{job_id() => %{peer() => result()}}
+        }
+  def cancel_job(job_id, selector, results, state) do
+    canceled_results =
+      results
+      |> clean_results()
+      |> Map.take(match_peers(state.inventory, selector))
+
+    matched = Map.keys(canceled_results)
+
+    cancel_packets =
+      Enum.map(canceled_results, fn {peer, _} ->
+        [peer, @prefix, :erlang.term_to_binary({:cancel, job_id, state.my_name})]
+      end)
+
+    remaining =
+      Enum.reduce(matched, results, fn peer, acc ->
+        acc
+        |> Map.update!(@expected, &(&1 - 1))
+        |> Map.update!(@returned, fn x ->
+          case acc[peer] do
+            :pending -> x
+            _ -> x - 1
+          end
+        end)
+        |> Map.delete(peer)
+      end)
+
+    rem_exp = Map.fetch!(remaining, @expected)
+    rem_ret = Map.fetch!(remaining, @returned)
+    notify_caller? = rem_exp > 0 and rem_exp == rem_ret
+
+    responses =
+      if rem_exp == 0 do
+        Map.delete(state.responses, job_id)
+      else
+        Map.put(state.responses, job_id, remaining)
+      end
+
+    %{
+      cancel_packets: cancel_packets,
+      canceled_results: canceled_results,
+      remaining: remaining,
+      notify_caller?: notify_caller?,
+      responses: responses
+    }
+  end
+
+  defp to_selector(:all) do
+    :all
+  end
+
+  defp to_selector("" <> tag) do
+    to_selector([tag])
+  end
+
+  defp to_selector(tags) when is_list(tags) do
+    {:tags, tags}
+  end
+
+  defp to_selector(regex = %Regex{}) do
+    {:regex, regex}
+  end
+
+  defp to_selector(filter) when is_function(filter, 1) do
+    {:filter, filter}
   end
 
   defp clean_results(results) do
