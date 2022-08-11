@@ -17,12 +17,8 @@ defmodule Turma.Legionarius do
 
   @impl GenServer
   def init(opts) do
-    dealer_sock =
-      case :chumak.socket(:dealer, to_charlist(opts.id)) do
-        {:ok, dealer_sock} -> dealer_sock
-        {:error, {:already_started, dealer_sock}} -> dealer_sock
-      end
-
+    Process.flag(:trap_exit, true)
+    {:ok, dealer_sock} = :chumak.socket(:dealer, to_charlist(opts.id))
     {:ok, router_sock} = :chumak.socket(:router)
     {iface, base_port_num} = Map.get(opts, :bind, {"localhost", 9877})
     {:ok, _bind_pid0} = :chumak.bind(dealer_sock, :tcp, to_charlist(iface), base_port_num)
@@ -32,6 +28,7 @@ defmodule Turma.Legionarius do
 
     {:ok,
      %{
+       jobs: %{},
        my_id: opts.id,
        dealer_sock: dealer_sock,
        router_sock: router_sock,
@@ -62,15 +59,27 @@ defmodule Turma.Legionarius do
              is_binary(identity) and
              is_reference(id) ->
         Logger.info("running something...")
-        run(id, identity, fun)
-        :ok
+        job_pid = run(id, identity, fun)
+        state = put_in(state, [:jobs, id], %{job_pid: job_pid})
+        {:noreply, state}
+
+      {:cancel, id, decurio_identity} ->
+        Logger.info("cancelling #{inspect(id)} (#{inspect(decurio_identity)})...")
+        job_info = state.jobs[id]
+
+        try do
+          Process.exit(job_info[:job_pid], :kill)
+        rescue
+          _ -> :ok
+        end
+
+        {_, state} = pop_in(state, [:jobs, id])
+        {:noreply, state}
 
       x ->
         Logger.info("got something weird... #{inspect(x)}")
-        :ok
+        {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   def handle_info({:done, id, decurio_identity, res}, state) do
@@ -79,12 +88,20 @@ defmodule Turma.Legionarius do
       :erlang.term_to_binary({:result, id, state.my_id, res})
     ])
 
+    {_, state} = pop_in(state, [:jobs, id])
     {:noreply, state}
   end
 
   def handle_info(msg, state) do
     Logger.warning("got strange message: #{inspect(msg, pretty: true)}")
     {:noreply, state}
+  end
+
+  @impl GenServer
+  def terminate(_reason, state) do
+    :chumak.stop(state.dealer_sock)
+    :chumak.stop(state.router_sock)
+    state
   end
 
   def receiver_loop(parent, dealer_sock) do
@@ -102,7 +119,7 @@ defmodule Turma.Legionarius do
   defp run(id, identity, fun) do
     parent = self()
 
-    spawn(fn ->
+    spawn_link(fn ->
       res =
         try do
           {:done, fun.()}

@@ -31,6 +31,7 @@ defmodule Turma.MixProject do
   defp deps do
     [
       {:chumak, github: "zeromq/chumak", ref: "f89a873ea2d4b94d3d415228b72cf4f92f076af5"},
+      {:stream_data, "~> 0.5.0", only: [:test]},
       {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
     ]
   end

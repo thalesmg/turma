@@ -8,6 +8,15 @@ defmodule Turma.Test.Utils do
     node()
   end
 
+  def hang() do
+    Process.register(self(), :hang_test)
+    unreachable = :erlang.make_ref()
+
+    receive do
+      ^unreachable -> :impossible!
+    end
+  end
+
   def test_reply() do
     {:ok, id} = Turma.Decurio.run(&__MODULE__.success/0)
 
