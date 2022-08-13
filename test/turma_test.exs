@@ -23,11 +23,15 @@ defmodule TurmaTest do
   end
 
   setup env = %{host: host} do
+    setup_dbg()
     {:ok, leg_node1} = start_slave(:legionarius, :leg1, host)
     {:ok, leg_node2} = start_slave(:legionarius, :leg2, host)
     {:ok, dec_node} = start_slave(:decurio, :dec, host)
     legs = [leg_node1, leg_node2]
     nodes = [dec_node | legs]
+    Enum.each(nodes, &:dbg.n/1)
+    :dbg.p(:all, [:c])
+    :dbg.tpl(:chumak_peer, :do_handshake, 2, :cx)
 
     on_exit(fn ->
       Enum.each(nodes, fn n ->
@@ -96,7 +100,9 @@ defmodule TurmaTest do
         )
     end)
 
-    Process.sleep(5_000)
+    if set_inventory? do
+      Enum.each(nodes, &wait_connected/1)
+    end
 
     {:ok,
      %{
@@ -113,12 +119,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [&Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [[&Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(nodes, fn n ->
@@ -148,12 +152,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               ["legionarius", &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [["legionarius", &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(legs, fn n ->
@@ -171,12 +173,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [["legionarius", "decurio"], &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [[["legionarius", "decurio"], &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(nodes, fn n ->
@@ -195,12 +195,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [~r/localhost:29876/, &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [[~r/localhost:29876/, &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected = %{Map.fetch!(peers, dec) => {:done, dec}}
 
@@ -216,12 +214,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [&Utils.filter1/1, &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [[&Utils.filter1/1, &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected = %{Map.fetch!(peers, leg1) => {:done, leg1}}
 
@@ -278,12 +274,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [&Utils.error_fn/0]
+               Utils,
+               :run_and_wait,
+               [[&Utils.error_fn/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(nodes, fn n ->
@@ -302,12 +296,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [&Utils.raise_fn/0]
+               Utils,
+               :run_and_wait,
+               [[&Utils.raise_fn/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(nodes, fn n ->
@@ -326,12 +318,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               [&Utils.throw_fn/0]
+               Utils,
+               :run_and_wait,
+               [[&Utils.throw_fn/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(nodes, fn n ->
@@ -350,12 +340,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               ["legionarius", &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [["legionarius", &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected =
       Map.new(legs, fn n ->
@@ -388,12 +376,10 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Decurio,
-               :run,
-               ["tag", &Utils.success/0]
+               Utils,
+               :run_and_wait,
+               [["tag", &Utils.success/0]]
              )
-
-    Process.sleep(1_000)
 
     expected = %{Map.fetch!(peers, leg1) => {:done, leg1}}
 
@@ -479,5 +465,37 @@ defmodule TurmaTest do
     |> Enum.each(fn {n, ref} ->
       assert_receive {:DOWN, ^ref, :process, _pid, _}, 1_000, "node didn't cancel: #{n}"
     end)
+  end
+
+  defp setup_dbg() do
+    test_pid = self()
+
+    {:ok, pid} =
+      :dbg.tracer(
+        :process,
+        {fn evt, state ->
+           send(test_pid, {:evt, evt})
+           state
+         end, :state}
+      )
+
+    on_exit(fn ->
+      :dbg.stop_trace_client(pid)
+      :dbg.stop_clear()
+    end)
+  end
+
+  defp wait_connected(node, timeout \\ 10_000) do
+    receive do
+      {:evt, {:trace, pid, :return_from, {:chumak_peer, :do_handshake, 2}, _msg}}
+      when node(pid) == node ->
+        :ok
+    after
+      timeout ->
+        Process.info(self(), :messages)
+        |> IO.inspect(label: :messages)
+
+        raise "not connected!"
+    end
   end
 end

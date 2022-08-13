@@ -1,4 +1,16 @@
 defmodule Turma.Test.Utils do
+  def run_and_wait(args, timeout \\ 1_000) do
+    {:ok, req_id} = apply(Turma.Decurio, :run, args)
+
+    receive do
+      {:job_finished, ^req_id} -> :ok
+    after
+      timeout -> raise "not finished!"
+    end
+
+    {:ok, req_id}
+  end
+
   def success() do
     node()
   end
