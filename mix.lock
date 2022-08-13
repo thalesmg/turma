@@ -2,5 +2,7 @@
   "chumak": {:git, "https://github.com/zeromq/chumak.git", "f89a873ea2d4b94d3d415228b72cf4f92f076af5", [ref: "f89a873ea2d4b94d3d415228b72cf4f92f076af5"]},
   "dialyxir": {:hex, :dialyxir, "1.2.0", "58344b3e87c2e7095304c81a9ae65cb68b613e28340690dfe1a5597fd08dec37", [:mix], [{:erlex, ">= 0.2.6", [hex: :erlex, repo: "hexpm", optional: false]}], "hexpm", "61072136427a851674cab81762be4dbeae7679f85b1272b6d25c3a839aff8463"},
   "erlex": {:hex, :erlex, "0.2.6", "c7987d15e899c7a2f34f5420d2a2ea0d659682c06ac607572df55a43753aa12e", [:mix], [], "hexpm", "2ed2e25711feb44d52b17d2780eabf998452f6efda104877a3881c2f8c0c0c75"},
+  "pingado": {:git, "https://github.com/thalesmg/pingado.git", "3aea71a535ca5be978139ec3c1df1f37c4cf7332", [ref: "3aea71a535ca5be978139ec3c1df1f37c4cf7332"]},
+  "snabbkaffe": {:hex, :snabbkaffe, "1.0.1", "8e95ccbc90e1445c6b504d7980a35fe87e140bd694ced35851965b87d42bd882", [:rebar3], [], "hexpm", "035812759963897b71ee69a11e8dff93bbbb0f475055479a557dd3c4fd72fe33"},
   "stream_data": {:hex, :stream_data, "0.5.0", "b27641e58941685c75b353577dc602c9d2c12292dd84babf506c2033cd97893e", [:mix], [], "hexpm", "012bd2eec069ada4db3411f9115ccafa38540a3c78c4c0349f151fc761b9e271"},
 }

@@ -5,6 +5,8 @@ defmodule TurmaTest do
   alias Turma.Legionarius
   alias Turma.Test.Utils
 
+  require Pingado
+
   setup_all do
     {:ok, host} = :inet.gethostname()
     {:ok, _} = Node.start(:test, :shortnames)
@@ -23,6 +25,8 @@ defmodule TurmaTest do
   end
 
   setup env = %{host: host} do
+    :ok = Pingado.start_trace()
+    on_exit(&Pingado.stop/0)
     setup_dbg()
     {:ok, leg_node1} = start_slave(:legionarius, :leg1, host)
     {:ok, leg_node2} = start_slave(:legionarius, :leg2, host)
@@ -30,6 +34,7 @@ defmodule TurmaTest do
     legs = [leg_node1, leg_node2]
     nodes = [dec_node | legs]
     Enum.each(nodes, &:dbg.n/1)
+    Enum.each(nodes, fn n -> :ok = Pingado.forward_trace(n) end)
     :dbg.p(:all, [:c])
     :dbg.tpl(:chumak_peer, :do_handshake, 2, :cx)
 
@@ -119,10 +124,15 @@ defmodule TurmaTest do
     assert {:ok, req_id} =
              :erpc.call(
                dec,
-               Utils,
-               :run_and_wait,
-               [[&Utils.success/0]]
+               Decurio,
+               :run,
+               [&Utils.success/0]
              )
+
+    Pingado.block_until(
+      %{Pingado.kind() => :job_finished, id: ^req_id},
+      1_000
+    )
 
     expected =
       Map.new(nodes, fn n ->
@@ -250,7 +260,10 @@ defmodule TurmaTest do
              [req_id]
            ) == {:ok, expected_pending}
 
-    Process.sleep(1_500)
+    Pingado.block_until(
+      %{Pingado.kind() => :job_finished, id: ^req_id},
+      1_500
+    )
 
     expected_done =
       Map.new(nodes, fn n ->
@@ -371,7 +384,7 @@ defmodule TurmaTest do
              [inv]
            ) == :ok
 
-    Process.sleep(1_000)
+    wait_connected(leg1)
 
     assert {:ok, req_id} =
              :erpc.call(
@@ -392,6 +405,13 @@ defmodule TurmaTest do
   end
 
   test "cancel", %{nodes: nodes, peers: peers, dec: dec} do
+    {:ok, sub_ref} =
+      Pingado.subscribe(
+        Pingado.match_event(%{Pingado.kind() => :hang_test_registered}),
+        Enum.count(nodes),
+        1_000
+      )
+
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -400,7 +420,10 @@ defmodule TurmaTest do
                [&Utils.hang/0]
              )
 
-    Process.sleep(1_000)
+    Pingado.tp(:error, :hang_test_registered, %{fuck: true})
+
+    {:ok, _} = Pingado.receive_events(sub_ref)
+
     refs = Enum.map(nodes, &{&1, Process.monitor({:hang_test, &1})})
 
     Enum.each(refs, fn {n, ref} ->
@@ -429,6 +452,13 @@ defmodule TurmaTest do
   end
 
   test "cancel subset", %{nodes: nodes, peers: peers, legs: legs, dec: dec} do
+    {:ok, sub_ref} =
+      Pingado.subscribe(
+        Pingado.match_event(%{Pingado.kind() => :hang_test_registered}),
+        Enum.count(nodes),
+        1_000
+      )
+
     assert {:ok, req_id} =
              :erpc.call(
                dec,
@@ -437,7 +467,7 @@ defmodule TurmaTest do
                [&Utils.hang/0]
              )
 
-    Process.sleep(1_000)
+    {:ok, _} = Pingado.receive_events(sub_ref)
     refs = Enum.map(nodes, &{&1, Process.monitor({:hang_test, &1})})
 
     Enum.each(refs, fn {n, ref} ->
@@ -492,10 +522,8 @@ defmodule TurmaTest do
         :ok
     after
       timeout ->
-        Process.info(self(), :messages)
-        |> IO.inspect(label: :messages)
-
-        raise "not connected!"
+        {:messages, msgs} = Process.info(self(), :messages)
+        raise "not connected!\n#{inspect(msgs, pretty: true)}"
     end
   end
 end

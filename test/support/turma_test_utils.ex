@@ -1,4 +1,6 @@
 defmodule Turma.Test.Utils do
+  require Pingado
+
   def run_and_wait(args, timeout \\ 1_000) do
     {:ok, req_id} = apply(Turma.Decurio, :run, args)
 
@@ -22,6 +24,7 @@ defmodule Turma.Test.Utils do
 
   def hang() do
     Process.register(self(), :hang_test)
+    Pingado.tp(:hang_test_registered, %{})
     unreachable = :erlang.make_ref()
 
     receive do

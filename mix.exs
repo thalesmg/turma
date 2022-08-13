@@ -32,6 +32,7 @@ defmodule Turma.MixProject do
     [
       {:chumak, github: "zeromq/chumak", ref: "f89a873ea2d4b94d3d415228b72cf4f92f076af5"},
       {:stream_data, "~> 0.5.0", only: [:test]},
+      {:pingado, github: "thalesmg/pingado", ref: "3aea71a535ca5be978139ec3c1df1f37c4cf7332"},
       {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
     ]
   end

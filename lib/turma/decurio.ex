@@ -2,6 +2,7 @@ defmodule Turma.Decurio do
   use GenServer
 
   require Logger
+  require Pingado
 
   @prefix "turma-command:"
   @expected :"$expected"
@@ -282,6 +283,7 @@ defmodule Turma.Decurio do
         state = %{state | responses: responses}
 
         if results[@expected] == results[@returned] do
+          Pingado.tp(:job_finished, %{id: id, results: results})
           send(results[@caller], {:job_finished, id})
         end
 
